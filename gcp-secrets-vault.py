@@ -925,7 +925,7 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     print_banner(label, cfg)
 
     # 1) Platform + MDM enrollment
-    print(f"{COLOR_CYAN}[1/5] Platform and Jamf enrollment check{COLOR_RESET}")
+    print(f"{COLOR_CYAN}[1/6] Platform and Jamf enrollment check{COLOR_RESET}")
     ensure_macos_and_mdm_enrolled()
     print(f"      Status: {COLOR_GREEN}OK{COLOR_RESET}")
     print(
@@ -935,8 +935,8 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     )
     print()
 
-    # 1b) Cloudflare WARP connectivity (client-side via URL)
-    print(f"{COLOR_CYAN}[1b] Cloudflare WARP connectivity check{COLOR_RESET}")
+    # 2) Cloudflare WARP connectivity (client-side via URL)
+    print(f"{COLOR_CYAN}[2/6] Cloudflare WARP connectivity check{COLOR_RESET}")
     ensure_cloudflare_warp_connected_via_trace(require_gateway=True)
     print(f"      Status: {COLOR_GREEN}OK{COLOR_RESET}")
     print(
@@ -946,8 +946,8 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     )
     print()
 
-    # 2) Identity + org access (human ADC, org-scoped)
-    print(f"{COLOR_CYAN}[2/5] Identity and organization access check{COLOR_RESET}")
+    # 3) Identity + org access (human ADC, org-scoped)
+    print(f"{COLOR_CYAN}[3/6] Identity and organization access check{COLOR_RESET}")
     actor_email, actor_name = ensure_org_access(cfg)
     identity_str = actor_email if not actor_name else f"{actor_name} <{actor_email}>"
     print(f"      Status: {COLOR_GREEN}OK{COLOR_RESET} (user: {identity_str})")
@@ -958,8 +958,8 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     )
     print()
 
-    # 3) BigQuery connectivity (catalog reachable under correct project)
-    print(f"{COLOR_CYAN}[3/5] BigQuery connectivity test{COLOR_RESET}")
+    # 4) BigQuery connectivity (catalog reachable under correct project)
+    print(f"{COLOR_CYAN}[4/6] BigQuery connectivity test{COLOR_RESET}")
     test_bq_connection(cfg)
     print(
         f"      {COLOR_CYAN}Compliance:{COLOR_RESET} "
@@ -968,8 +968,8 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     )
     print()
 
-    # 4) KMS round-trip (encrypt/decrypt functional)
-    print(f"{COLOR_CYAN}[4/5] KMS encrypt/decrypt round-trip test{COLOR_RESET}")
+    # 5) KMS round-trip (encrypt/decrypt functional)
+    print(f"{COLOR_CYAN}[5/6] KMS encrypt/decrypt round-trip test{COLOR_RESET}")
     test_kms_roundtrip(cfg)
     print(
         f"      {COLOR_CYAN}Compliance:{COLOR_RESET} "
@@ -979,12 +979,22 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     print()
 
     # 5) KMS rotation status (key lifecycle)
-    print(f"{COLOR_CYAN}[5/5] KMS rotation status{COLOR_RESET}")
+    print(f"{COLOR_CYAN}[5/6] KMS rotation status{COLOR_RESET}")
     print_kms_rotation_status(cfg)
     print(
         f"      {COLOR_CYAN}Compliance:{COLOR_RESET} "
         "PCI DSS 3.6.1, 3.6.4; GDPR 32(1)(d); SOC 2 CC3.2, CC6.8; "
         "NIST SP 800-53 Rev. 5 SC-12, CM-6"
+    )
+    print()
+
+    # 6) Dependency Audit (non-fatal)
+    print(f"{COLOR_CYAN}[6/6] Dependency security audit{COLOR_RESET}")
+    run_dependency_audit()
+    print(
+        f"      {COLOR_CYAN}Compliance:{COLOR_RESET} "
+        "PCI DSS 6.1, 6.2; GDPR 32(1)(d); SOC 2 CC8.1; "
+        "NIST SP 800-53 Rev. 5 SA-11, SI-2"
     )
     print()
 
@@ -1299,6 +1309,84 @@ def run_self_tests(cfg: Dict[str, Any]) -> None:
     actor_email, actor_name = run_env_and_access_checks(cfg, "test")
     identity_str = actor_email if not actor_name else f"{actor_name} <{actor_email}>"
     print(f"{COLOR_GREEN}Self-test completed successfully (user: {identity_str}).{COLOR_RESET}")
+
+
+# ---------------------------------------------------------------------------
+# Dependency Audit
+# ---------------------------------------------------------------------------
+
+
+def run_dependency_audit() -> None:
+    """
+    Run pip-audit, parse its JSON output, and generate a user-friendly report.
+    """
+    print(f"{COLOR_CYAN}Running dependency audit...{COLOR_RESET}")
+
+    try:
+        # We use sys.executable to ensure we're running the pip-audit from the same environment
+        proc = subprocess.run(
+            [sys.executable, "-m", "pip_audit", "--format=json"],
+            capture_output=True,
+            text=True,
+            check=False,  # We check the return code manually
+        )
+    except FileNotFoundError:
+        print(
+            f"      {COLOR_YELLOW}Warning: 'pip-audit' not found. "
+            f"Skipping dependency audit.{COLOR_RESET}",
+            file=sys.stderr,
+        )
+        return
+
+    # pip-audit exits with a non-zero code if vulnerabilities are found.
+    # So, we can't just rely on check=True.
+    if proc.returncode != 0 and not proc.stdout:
+        print(
+            f"      {COLOR_YELLOW}Warning: 'pip-audit' failed with return code {proc.returncode}{COLOR_RESET}",
+            file=sys.stderr,
+        )
+        print(proc.stderr, file=sys.stderr)
+        return
+
+    try:
+        audit_results = json.loads(proc.stdout)
+        dependencies = audit_results.get("dependencies", [])
+    except json.JSONDecodeError:
+        print(
+            f"      {COLOR_YELLOW}Warning: Failed to parse JSON output from 'pip-audit'. "
+            f"Skipping dependency audit.{COLOR_RESET}",
+            file=sys.stderr,
+        )
+        print("Raw output:", proc.stdout, file=sys.stderr)
+        return
+
+    all_vulns = []
+    for dep in dependencies:
+        if dep.get("vulns"):
+            for v in dep["vulns"]:
+                all_vulns.append({
+                    "name": dep.get("name"),
+                    "version": dep.get("version"),
+                    "id": v.get("id"),
+                    "fix_versions": v.get("fix_versions"),
+                    "description": v.get("description"),
+                })
+
+    if not all_vulns:
+        print(f"      Status: {COLOR_GREEN}OK{COLOR_RESET} (No known vulnerabilities found)")
+        return
+
+    print(f"      Status: {COLOR_YELLOW}Warning: Found {len(all_vulns)} vulnerabilities:{COLOR_RESET}")
+
+    for vuln in all_vulns:
+        name = vuln.get("name", "N/A")
+        version = vuln.get("version", "N/A")
+        vuln_id = vuln.get("id", "N/A")
+        fix_versions = ", ".join(vuln.get("fix_versions", []))
+
+        print(f"        - {COLOR_BOLD}{vuln_id}{COLOR_RESET} in {name} ({version})")
+        if fix_versions:
+            print(f"          {COLOR_GREEN}Fix versions: {fix_versions}{COLOR_RESET}")
 
 
 # ---------------------------------------------------------------------------
