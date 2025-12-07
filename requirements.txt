@@ -4,3 +4,4 @@ google-cloud-kms==3.7.0
 google-cloud-secret-manager==2.25.0
 google-auth==2.43.0
 pyperclip==1.11.0
+pip-audit==2.10.0
