@@ -1,0 +1,6 @@
+pyfiglet==1.0.4
+google-cloud-bigquery==3.38.0
+google-cloud-kms==3.7.0
+google-cloud-secret-manager==2.25.0
+google-auth==2.43.0
+pyperclip==1.11.0
