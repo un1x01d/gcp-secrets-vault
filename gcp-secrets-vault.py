@@ -947,7 +947,7 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     print()
 
     # 2) Identity + org access (human ADC, org-scoped)
-    print(f"{COLOR_CYAN}[2/5] Identity and organization access check{COLORRESET}")
+    print(f"{COLOR_CYAN}[2/5] Identity and organization access check{COLOR_RESET}")
     actor_email, actor_name = ensure_org_access(cfg)
     identity_str = actor_email if not actor_name else f"{actor_name} <{actor_email}>"
     print(f"      Status: {COLOR_GREEN}OK{COLOR_RESET} (user: {identity_str})")
@@ -969,7 +969,7 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     print()
 
     # 4) KMS round-trip (encrypt/decrypt functional)
-    print(f"{COLOR_CYAN}[4/5] KMS encrypt/decrypt round-trip test{COLORRESET}")
+    print(f"{COLOR_CYAN}[4/5] KMS encrypt/decrypt round-trip test{COLOR_RESET}")
     test_kms_roundtrip(cfg)
     print(
         f"      {COLOR_CYAN}Compliance:{COLOR_RESET} "
@@ -979,7 +979,7 @@ def run_env_and_access_checks(cfg: Dict[str, Any], label: str) -> Tuple[str, Opt
     print()
 
     # 5) KMS rotation status (key lifecycle)
-    print(f"{COLOR_CYAN}[5/5] KMS rotation status{COLORRESET}")
+    print(f"{COLOR_CYAN}[5/5] KMS rotation status{COLOR_RESET}")
     print_kms_rotation_status(cfg)
     print(
         f"      {COLOR_CYAN}Compliance:{COLOR_RESET} "
